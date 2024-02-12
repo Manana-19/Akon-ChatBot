@@ -3,78 +3,65 @@ import json
 import pickle
 import numpy as np
 import tensorflow as tf
-
 import nltk
 
 from nltk.stem import WordNetLemmatizer
 
-lemmatizer = WordNetLemmatizer()
+class Chatbot:
+    def __init__(self, intents_file='intents.json', model_file='chatbot_model.h5', words_file='words.pkl', classes_file='classes.pkl', error_threshold=0.25):
+        self.intents_file = intents_file
+        self.model_file = model_file
+        self.words_file = words_file
+        self.classes_file = classes_file
+        self.error_threshold = error_threshold
 
-intents = ''
-with open('intents.json') as file:
-    intents=json.loads(file.read())
+        self.lemmatizer = WordNetLemmatizer()
+        self.words = pickle.load(open(self.words_file, 'rb'))
+        self.classes = pickle.load(open(self.classes_file, 'rb'))
+        self.model = tf.keras.models.load_model(self.model_file)
+        with open(self.intents_file) as file:
+            self.intents = json.loads(file.read())
 
-words = pickle.load(open('words.pkl', 'rb'))
-classes = pickle.load(open('classes.pkl', 'rb'))
+    def sentence_cleanup(self, sentence):
+        s_words = nltk.word_tokenize(sentence)
+        s_words = [self.lemmatizer.lemmatize(word) for word in s_words]
+        return s_words
 
-model = tf.keras.models.load_model('chatbot_model.h5')
+    def bag_of_words(self, sentence):
+        s_words = self.sentence_cleanup(sentence)
+        bag = [0] * len(self.words)
+        for word1 in s_words:
+            for i, data in enumerate(self.words):
+                if word1 == data:
+                    bag[i] = 1
+        return np.array(bag)
 
-def sentenceCleanUp(sentence):
-    s_words = nltk.word_tokenize(sentence)
-    s_words = [lemmatizer.lemmatize(word) for word in s_words]
-    
-    return s_words
+    def class_predict(self, sentence):
+        BoW = self.bag_of_words(sentence)
+        initial_res = self.model.predict(np.array([BoW]))[0]
+        final_result = [[i, r] for i, r in enumerate(initial_res) if r > self.error_threshold]
+        final_result.sort(key=lambda x: x[1], reverse=True)
+        returnList = []
+        for x in final_result:
+            returnList.append({'intent': self.classes[x[0]], 'probability': str(x[1])})
+        return returnList
 
-def bagofwords(sentence):
-    
-    s_words = sentenceCleanUp(sentence)
-    bag = [0]*len(words)
-   
-    for word1 in s_words:
-   
-        for i, data in enumerate(words):
-   
-            if word1==data:
-                bag[i] = 1
-   
-   
-    return np.array(bag)
+    def response(self, res):
+        for x in self.intents['intents']:
+            if x['tag'] == res:
+                result = random.choice(x['responses'])
+                break
+        return result
 
-def ClassPredict(sentence):
+    def chat(self):
+        while True:
+            inp = input()
+            if inp == 'exit':
+                print('Closing the chatbot.....')
+                exit(0)
+            intent = self.class_predict(inp)[0]['intent']
+            print(self.response(intent))
 
-    BoW = bagofwords(sentence)
-    initial_res = model.predict(np.array([BoW]))[0]
-    ERR_TH = 0.25
-
-    final_result = [[i,r] for i,r in enumerate(initial_res) if r>ERR_TH]
-    final_result.sort(key=lambda x: x[1], reverse=True)
-
-    returnList = []
-
-    for x in final_result:
-        returnList.append({'intent':classes[x[0]],'probability':str(x[1])})
-
-    return returnList
-
-def response(dictionary_of_intents, res):
-    for x in dictionary_of_intents['intents']:
-        if x['tag'] == res:
-            result=random.choice(x['responses'])
-            break
-    return result
-
-
-print('✅')
-print("Type 'exit123' in order to exit the application")
-print('You\'re good to go with this chatbot')
-
-while True:
-
-    inp = input('=> ')
-
-    if inp == 'exit123': print('Closing the chatbot.....');exit(0)
-    # print(ClassPredict(inp))
-
-    intent=ClassPredict(inp)[0]['intent']
-
-    print('Akon: ',response(intents, intent))
+# Example usage:
+chatbot = Chatbot()
+chatbot.chat()
